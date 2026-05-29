@@ -39,9 +39,9 @@ function Get-PythonInfo {
 }
 
 function Install-RepoFiles {
-    # Use [System.IO.Path]::GetTempPath() to avoid 8.3 short-path issues with $env:TEMP
-    $zipPath    = Join-Path ([System.IO.Path]::GetTempPath()) 'eautomate-ar-mcp.zip'
-    $stagingDir = "$InstallDir-staging"
+    # Download into %LOCALAPPDATA% — avoids 8.3 short-path issues with %TEMP%
+    $zipPath    = "$env:LOCALAPPDATA\eautomate-ar-mcp-download.zip"
+    $stagingDir = "$env:LOCALAPPDATA\eautomate-ar-mcp-staging"
     Write-Host "  Downloading from GitHub..." -ForegroundColor Yellow
     Invoke-WebRequest -Uri $RepoZipUrl -OutFile $zipPath -UseBasicParsing
     Write-Host "  Extracting to $InstallDir..." -ForegroundColor Yellow
@@ -53,7 +53,7 @@ function Install-RepoFiles {
     $extracted = Get-ChildItem $stagingDir -Directory | Select-Object -First 1
     if (Test-Path $InstallDir) { Remove-Item $InstallDir -Recurse -Force }
     Move-Item $extracted.FullName $InstallDir
-    try { Remove-Item $stagingDir -Force } catch { }  # cleanup — non-fatal
+    try { Remove-Item $stagingDir -Recurse -Force } catch { }  # cleanup — non-fatal
 }
 
 function Read-WithDefault {
