@@ -20,9 +20,8 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$InstallDir       = Join-Path $env:LOCALAPPDATA 'Programs\eautomate-ar-mcp'
-$ClaudeConfigPath = Join-Path $env:APPDATA 'Claude\claude_desktop_config.json'
-$RepoOwner        = 'Allied-Business-Solutions'
+$InstallDir  = Join-Path $env:LOCALAPPDATA 'Programs\eautomate-ar-mcp'
+$RepoOwner   = 'Allied-Business-Solutions'
 $RepoName         = 'eautomate-ar-mcp'
 $RepoZipUrl       = "https://github.com/$RepoOwner/$RepoName/archive/refs/heads/main.zip"
 
@@ -153,7 +152,7 @@ Write-Host ""
 $authMode = if ($eaUsername) { "SQL login ($eaUsername)" } else { "Windows Authentication" }
 Write-Host "  .env written — Server=$eaServer, DB=$eaDatabase, Auth=$authMode" -ForegroundColor Green
 
-# 6. Write claude_desktop_config.json
+# 6. Detect Claude Desktop config path and register
 Write-Host ""
 Write-Host "Registering with Claude Desktop..." -ForegroundColor Cyan
 
@@ -172,8 +171,33 @@ $mcpEntry = [PSCustomObject]@{
     env     = $mcpEnv
 }
 
-Merge-ClaudeConfig -ConfigPath $ClaudeConfigPath -McpEntry $mcpEntry
-Write-Host "  $ClaudeConfigPath updated" -ForegroundColor Green
+# Detect config path — Claude Desktop has two possible locations depending on how it was installed:
+#   Direct download : %APPDATA%\Claude\claude_desktop_config.json
+#   Microsoft Store : %LOCALAPPDATA%\Packages\Claude_<hash>\LocalCache\Roaming\Claude\claude_desktop_config.json
+$configPaths = @()
+
+$standardConfig = Join-Path $env:APPDATA 'Claude\claude_desktop_config.json'
+if (Test-Path (Split-Path $standardConfig -Parent)) {
+    $configPaths += $standardConfig
+}
+
+$storePackages = Get-ChildItem "$env:LOCALAPPDATA\Packages" -Filter 'Claude_*' -Directory -ErrorAction SilentlyContinue
+foreach ($pkg in $storePackages) {
+    $storePath = Join-Path $pkg.FullName 'LocalCache\Roaming\Claude\claude_desktop_config.json'
+    if (Test-Path (Split-Path $storePath -Parent)) {
+        $configPaths += $storePath
+    }
+}
+
+if ($configPaths.Count -eq 0) {
+    Write-Host "  No existing Claude config folder found — creating at standard path." -ForegroundColor Yellow
+    $configPaths += $standardConfig
+}
+
+foreach ($path in $configPaths) {
+    Merge-ClaudeConfig -ConfigPath $path -McpEntry $mcpEntry
+    Write-Host "  Registered: $path" -ForegroundColor Green
+}
 
 # 7. Done
 Write-Host ""

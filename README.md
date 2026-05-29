@@ -77,7 +77,11 @@ Then **restart Claude Desktop**.
    EA_PASSWORD=s3cr3t
    ```
 
-3. Add to `%APPDATA%\Claude\claude_desktop_config.json`:
+3. Add to your Claude Desktop config file. The path depends on how Claude was installed:
+
+   - **Direct download** (claude.ai): `%APPDATA%\Claude\claude_desktop_config.json`
+   - **Microsoft Store**: `%LOCALAPPDATA%\Packages\Claude_<hash>\LocalCache\Roaming\Claude\claude_desktop_config.json`
+     *(find your exact path by running: `Get-ChildItem "$env:LOCALAPPDATA\Packages" -Filter 'Claude_*'` in PowerShell)*
    ```json
    {
      "mcpServers": {
