@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "eautomate-ar": {
+      "command": "python",
+      "args": ["C:\\path\\to\\eautomate-mcp\\server.py"],
+      "env": {
+        "EA_SERVER": "absapp4",
+        "EA_DATABASE": "CoAlliedBusiness",
+        "EA_USERNAME": "your_sql_login",
+        "EA_PASSWORD": "your_password"
+      }
+    }
+  }
+}

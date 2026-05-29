@@ -1,0 +1,22 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Dev/scratch files
+explore_schema.py
+explore_columns.py
+
+# OS
+.DS_Store
+Thumbs.db
