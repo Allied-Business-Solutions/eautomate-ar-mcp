@@ -1,154 +1,186 @@
+#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Installs the e-automate MCP server and registers it with Claude.
+    Installs the e-automate AR MCP server for Claude Desktop.
 
 .DESCRIPTION
-    - Verifies Python 3.10+ is available
-    - Installs Python dependencies (mcp, pyodbc, python-dotenv)
-    - Copies .env.example to .env if .env does not exist
-    - Registers the MCP server in the Claude config file.
-      Claude Desktop : %APPDATA%\Claude\claude_desktop_config.json
-      Claude Code    : %USERPROFILE%\.claude\settings.json  (use -Target ClaudeCode)
-
-.PARAMETER ServerPath
-    Full path to the cloned eautomate-mcp directory.
-    Defaults to the parent of this script's directory.
-
-.PARAMETER EAServer
-    SQL Server hostname for e-automate. Default: absapp4
-
-.PARAMETER EADatabase
-    e-automate database name. Default: CoAlliedBusiness
-
-.PARAMETER EAUsername
-    SQL Server login username. Leave blank to use Windows Authentication.
-
-.PARAMETER EAPassword
-    SQL Server login password. Required when EAUsername is set.
-
-.PARAMETER Target
-    Which Claude product to register with.
-    "ClaudeDesktop" (default) — %APPDATA%\Claude\claude_desktop_config.json
-    "ClaudeCode"              — %USERPROFILE%\.claude\settings.json
-    "Both"                    — registers in both config files
+    - Downloads the latest source from GitHub
+    - Extracts to %LOCALAPPDATA%\Programs\eautomate-ar-mcp\
+    - Verifies Python 3.10+ and installs pip dependencies
+    - Prompts for SQL Server connection details
+    - Writes the eautomate-ar entry into claude_desktop_config.json
 
 .EXAMPLE
-    .\install.ps1
-    .\install.ps1 -EAUsername earead -EAPassword "s3cr3t"
-    .\install.ps1 -Target ClaudeCode
-    .\install.ps1 -EAServer myserver -EADatabase MyDatabase -Target Both
+    # One-liner (recommended):
+    irm https://raw.githubusercontent.com/Allied-Business-Solutions/eautomate-ar-mcp/main/deploy/install.ps1 | iex
+
+    # Or run locally from a cloned repo:
+    .\deploy\install.ps1
 #>
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
 
-param(
-    [string]$ServerPath = (Split-Path $PSScriptRoot -Parent),
-    [string]$EAServer   = "absapp4",
-    [string]$EADatabase = "CoAlliedBusiness",
-    [string]$EAUsername = "",
-    [string]$EAPassword = "",
-    [ValidateSet("ClaudeDesktop","ClaudeCode","Both")]
-    [string]$Target     = "ClaudeDesktop"
-)
+$InstallDir       = Join-Path $env:LOCALAPPDATA 'Programs\eautomate-ar-mcp'
+$ClaudeConfigPath = Join-Path $env:APPDATA 'Claude\claude_desktop_config.json'
+$RepoOwner        = 'Allied-Business-Solutions'
+$RepoName         = 'eautomate-ar-mcp'
+$RepoZipUrl       = "https://github.com/$RepoOwner/$RepoName/archive/refs/heads/main.zip"
 
-$ErrorActionPreference = "Stop"
+# ── Functions ─────────────────────────────────────────────────────────────────
 
-Write-Host "`ne-automate MCP Server — Installer" -ForegroundColor Cyan
-Write-Host "===================================" -ForegroundColor Cyan
+function Get-PythonInfo {
+    try {
+        $output = & python --version 2>&1
+        if ($LASTEXITCODE -eq 0 -and $output -match 'Python (\d+)\.(\d+)') {
+            return @{ Path = (Get-Command python).Source; Major = [int]$Matches[1]; Minor = [int]$Matches[2] }
+        }
+    } catch { }
+    return $null
+}
 
-# ── 1. Verify Python ────────────────────────────────────────────────────────
-Write-Host "`n[1/4] Checking Python..." -ForegroundColor Yellow
-try {
-    $pyVersion = python --version 2>&1
-    Write-Host "      Found: $pyVersion" -ForegroundColor Green
-    $major, $minor = ($pyVersion -replace "Python ","").Split(".")[0,1]
-    if ([int]$major -lt 3 -or ([int]$major -eq 3 -and [int]$minor -lt 10)) {
-        throw "Python 3.10 or higher is required."
+function Install-RepoFiles {
+    $zipPath    = Join-Path $env:TEMP 'eautomate-ar-mcp.zip'
+    $stagingDir = "$InstallDir-staging"
+    Write-Host "  Downloading from GitHub..." -ForegroundColor Yellow
+    Invoke-WebRequest -Uri $RepoZipUrl -OutFile $zipPath -UseBasicParsing
+    Write-Host "  Extracting to $InstallDir..." -ForegroundColor Yellow
+    if (Test-Path $stagingDir) { Remove-Item $stagingDir -Recurse -Force }
+    New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
+    Expand-Archive -Path $zipPath -DestinationPath $stagingDir -Force
+    Remove-Item $zipPath -ErrorAction SilentlyContinue
+    # GitHub zip extracts to a subfolder like eautomate-ar-mcp-main\
+    $extracted = Get-ChildItem $stagingDir -Directory | Select-Object -First 1
+    if (Test-Path $InstallDir) { Remove-Item $InstallDir -Recurse -Force }
+    Move-Item $extracted.FullName $InstallDir
+    Remove-Item $stagingDir -ErrorAction SilentlyContinue
+}
+
+function Read-WithDefault {
+    param([string]$Prompt, [string]$Default)
+    $display = if ($Default) { "$Prompt [$Default]" } else { $Prompt }
+    $value = Read-Host $display
+    if ([string]::IsNullOrWhiteSpace($value)) { return $Default }
+    return $value.Trim()
+}
+
+function Read-Masked {
+    param([string]$Prompt)
+    $secure = Read-Host $Prompt -AsSecureString
+    return [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
+        [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
+}
+
+function Merge-ClaudeConfig {
+    param([string]$ConfigPath, [PSCustomObject]$McpEntry)
+    if (Test-Path $ConfigPath) {
+        $json = Get-Content $ConfigPath -Raw | ConvertFrom-Json
+    } else {
+        New-Item -ItemType Directory -Path (Split-Path $ConfigPath) -Force | Out-Null
+        $json = [PSCustomObject]@{}
     }
-} catch {
-    Write-Host "ERROR: $_" -ForegroundColor Red
-    Write-Host "Please install Python 3.10+ from https://python.org and re-run." -ForegroundColor Red
+    if (-not $json.PSObject.Properties['mcpServers']) {
+        $json | Add-Member -MemberType NoteProperty -Name 'mcpServers' -Value ([PSCustomObject]@{})
+    }
+    $json.mcpServers | Add-Member -MemberType NoteProperty -Name 'eautomate-ar' -Value $McpEntry -Force
+    [System.IO.File]::WriteAllText(
+        $ConfigPath,
+        ($json | ConvertTo-Json -Depth 10),
+        [System.Text.UTF8Encoding]::new($false)
+    )
+}
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+Write-Host ""
+Write-Host "e-automate AR MCP Installer" -ForegroundColor Cyan
+Write-Host "============================" -ForegroundColor Cyan
+Write-Host ""
+
+# 1. Python
+Write-Host "Checking Python..." -ForegroundColor Cyan
+$py = Get-PythonInfo
+if (-not $py) {
+    Write-Host "  ERROR: Python not found. Install Python 3.10+ from https://python.org and re-run." -ForegroundColor Red
     exit 1
 }
+if ($py.Major -lt 3 -or ($py.Major -eq 3 -and $py.Minor -lt 10)) {
+    Write-Host "  ERROR: Python $($py.Major).$($py.Minor) found but 3.10+ is required." -ForegroundColor Red
+    exit 1
+}
+Write-Host "  Python $($py.Major).$($py.Minor) found at $($py.Path)" -ForegroundColor Green
 
-# ── 2. Install dependencies ──────────────────────────────────────────────────
-Write-Host "`n[2/4] Installing Python dependencies..." -ForegroundColor Yellow
-$reqFile = Join-Path $ServerPath "requirements.txt"
-python -m pip install -r $reqFile --quiet
-Write-Host "      Dependencies installed." -ForegroundColor Green
+# 2. Download + extract
+Write-Host ""
+Write-Host "Downloading e-automate AR MCP..." -ForegroundColor Cyan
+Install-RepoFiles
+Write-Host "  Files installed to $InstallDir" -ForegroundColor Green
 
-# ── 3. Create .env ───────────────────────────────────────────────────────────
-Write-Host "`n[3/4] Configuring .env..." -ForegroundColor Yellow
-$envFile    = Join-Path $ServerPath ".env"
-$envExample = Join-Path $ServerPath ".env.example"
+# 3. Install Python dependencies
+Write-Host ""
+Write-Host "Installing Python dependencies..." -ForegroundColor Cyan
+$reqFile = Join-Path $InstallDir "requirements.txt"
+& python -m pip install -r $reqFile --quiet
+Write-Host "  Dependencies installed." -ForegroundColor Green
 
-if (-not (Test-Path $envFile)) {
-    Copy-Item $envExample $envFile
-    (Get-Content $envFile) `
-        -replace "EA_SERVER=.*",   "EA_SERVER=$EAServer" `
-        -replace "EA_DATABASE=.*", "EA_DATABASE=$EADatabase" `
-        -replace "EA_USERNAME=.*", "EA_USERNAME=$EAUsername" `
-        -replace "EA_PASSWORD=.*", "EA_PASSWORD=$EAPassword" |
-        Set-Content $envFile -Encoding utf8
-    $authMode = if ($EAUsername) { "SQL login ($EAUsername)" } else { "Windows Authentication" }
-    Write-Host "      Created .env — Server=$EAServer, DB=$EADatabase, Auth=$authMode" -ForegroundColor Green
-} else {
-    Write-Host "      .env already exists — skipping (edit it manually if needed)." -ForegroundColor Yellow
+# 4. Collect connection details
+Write-Host ""
+Write-Host "SQL Server Connection" -ForegroundColor Cyan
+Write-Host "---------------------"
+Write-Host "The MCP server connects to your e-automate database read-only."
+Write-Host "For SQL login, create a read-only account with db_datareader on the e-automate DB."
+Write-Host "Leave username blank to use Windows Authentication instead."
+Write-Host ""
+
+$eaServer   = Read-WithDefault "SQL Server hostname"   "absapp4"
+$eaDatabase = Read-WithDefault "Database name"         "CoAlliedBusiness"
+$eaUsername = Read-WithDefault "SQL login username (blank = Windows Auth)" ""
+$eaPassword = ""
+if ($eaUsername) {
+    $eaPassword = Read-Masked "SQL login password"
 }
 
-# ── 4. Build MCP entry ───────────────────────────────────────────────────────
-$serverScript = Join-Path $ServerPath "server.py"
-$pythonPath   = (Get-Command python).Source
+# 5. Write .env
+$envFile = Join-Path $InstallDir ".env"
+$envContent = @"
+EA_SERVER=$eaServer
+EA_DATABASE=$eaDatabase
+EA_USERNAME=$eaUsername
+EA_PASSWORD=$eaPassword
+"@
+[System.IO.File]::WriteAllText($envFile, $envContent, [System.Text.UTF8Encoding]::new($false))
+Write-Host ""
+$authMode = if ($eaUsername) { "SQL login ($eaUsername)" } else { "Windows Authentication" }
+Write-Host "  .env written — Server=$eaServer, DB=$eaDatabase, Auth=$authMode" -ForegroundColor Green
+
+# 6. Write claude_desktop_config.json
+Write-Host ""
+Write-Host "Registering with Claude Desktop..." -ForegroundColor Cyan
 
 $mcpEnv = [PSCustomObject]@{
-    EA_SERVER   = $EAServer
-    EA_DATABASE = $EADatabase
+    EA_SERVER   = $eaServer
+    EA_DATABASE = $eaDatabase
 }
-if ($EAUsername) {
-    $mcpEnv | Add-Member -MemberType NoteProperty -Name "EA_USERNAME" -Value $EAUsername
-    $mcpEnv | Add-Member -MemberType NoteProperty -Name "EA_PASSWORD" -Value $EAPassword
+if ($eaUsername) {
+    $mcpEnv | Add-Member -MemberType NoteProperty -Name 'EA_USERNAME' -Value $eaUsername
+    $mcpEnv | Add-Member -MemberType NoteProperty -Name 'EA_PASSWORD' -Value $eaPassword
 }
 
 $mcpEntry = [PSCustomObject]@{
-    command = $pythonPath
-    args    = @($serverScript)
+    command = $py.Path
+    args    = @((Join-Path $InstallDir "server.py"))
     env     = $mcpEnv
 }
 
-function Register-MCP {
-    param([string]$ConfigFile, [string]$Label)
+Merge-ClaudeConfig -ConfigPath $ClaudeConfigPath -McpEntry $mcpEntry
+Write-Host "  $ClaudeConfigPath updated" -ForegroundColor Green
 
-    $dir = Split-Path $ConfigFile -Parent
-    if (-not (Test-Path $dir)) {
-        New-Item -ItemType Directory -Force $dir | Out-Null
-    }
-
-    if (Test-Path $ConfigFile) {
-        $config = Get-Content $ConfigFile -Raw | ConvertFrom-Json
-    } else {
-        $config = [PSCustomObject]@{}
-    }
-
-    if (-not ($config | Get-Member -Name "mcpServers" -MemberType NoteProperty)) {
-        $config | Add-Member -MemberType NoteProperty -Name "mcpServers" -Value ([PSCustomObject]@{})
-    }
-
-    $config.mcpServers | Add-Member -MemberType NoteProperty -Name "eautomate-ar" -Value $mcpEntry -Force
-    $config | ConvertTo-Json -Depth 10 | Set-Content $ConfigFile -Encoding utf8
-    Write-Host "      Registered in $Label" -ForegroundColor Green
-    Write-Host "      -> $ConfigFile" -ForegroundColor DarkGray
-}
-
-Write-Host "`n[4/4] Registering MCP server with Claude..." -ForegroundColor Yellow
-
-$desktopConfig = Join-Path $env:APPDATA "Claude\claude_desktop_config.json"
-$codeConfig    = Join-Path $env:USERPROFILE ".claude\settings.json"
-
-if ($Target -eq "ClaudeDesktop" -or $Target -eq "Both") {
-    Register-MCP -ConfigFile $desktopConfig -Label "Claude Desktop"
-}
-if ($Target -eq "ClaudeCode" -or $Target -eq "Both") {
-    Register-MCP -ConfigFile $codeConfig -Label "Claude Code"
-}
-
-Write-Host "`nInstallation complete!" -ForegroundColor Cyan
-Write-Host "Restart Claude Desktop / Claude Code to load the new MCP server." -ForegroundColor Cyan
+# 7. Done
+Write-Host ""
+Write-Host "Installation complete!" -ForegroundColor Green
+Write-Host ""
+Write-Host "Next steps:"
+Write-Host "  1. Restart Claude Desktop"
+Write-Host "  2. Ask Claude: 'Search for customer Acme' to verify the connection"
+Write-Host "  3. If you see a connection error, check .env at:"
+Write-Host "       $envFile"
 Write-Host ""

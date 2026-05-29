@@ -38,57 +38,34 @@ All tools are **read-only** (`SELECT` queries only). No data is written, updated
 ## Prerequisites
 
 - **Python 3.10+** — [python.org](https://www.python.org/downloads/)
-- **Windows Authentication** access to the e-automate SQL Server
-- The account running the server must have at least `db_datareader` on the e-automate database
-- **Claude Code** or **Claude Desktop** (any recent version)
+- Read access to the e-automate SQL Server (Windows Auth or SQL login with `db_datareader`)
+- **Claude Desktop** (any recent version)
 
 ---
 
 ## Installation
 
-### Quick Install (recommended)
+### One-liner (recommended)
 
 ```powershell
-git clone https://github.com/Allied-Business-Solutions/eautomate-mcp.git
-cd eautomate-mcp
-.\deploy\install.ps1
+irm https://raw.githubusercontent.com/Allied-Business-Solutions/eautomate-ar-mcp/main/deploy/install.ps1 | iex
 ```
 
 The installer will:
 1. Verify Python 3.10+
-2. Install Python dependencies
-3. Create a `.env` file from `.env.example`
-4. Register the MCP server in the Claude config file
+2. Download and extract the server to `%LOCALAPPDATA%\Programs\eautomate-ar-mcp\`
+3. Install Python dependencies
+4. Prompt for SQL Server connection details and credentials
+5. Register with Claude Desktop (`%APPDATA%\Claude\claude_desktop_config.json`)
 
-Then **restart Claude Desktop or Claude Code**.
-
-By default the installer targets **Claude Desktop** (`%APPDATA%\Claude\claude_desktop_config.json`). Use `-Target` to change:
-
-```powershell
-# Claude Desktop (default)
-.\deploy\install.ps1
-
-# Claude Code only
-.\deploy\install.ps1 -Target ClaudeCode
-
-# Both
-.\deploy\install.ps1 -Target Both
-```
-
-### SQL login or custom server
-
-```powershell
-# SQL Server login
-.\deploy\install.ps1 -EAUsername earead -EAPassword "s3cr3t"
-
-# Custom server + SQL login
-.\deploy\install.ps1 -EAServer myserver -EADatabase MyDatabase -EAUsername earead -EAPassword "s3cr3t"
-```
+Then **restart Claude Desktop**.
 
 ### Manual Install
 
-1. Install dependencies:
+1. Clone the repo and install dependencies:
    ```powershell
+   git clone https://github.com/Allied-Business-Solutions/eautomate-ar-mcp.git
+   cd eautomate-ar-mcp
    pip install -r requirements.txt
    ```
 
@@ -102,13 +79,13 @@ By default the installer targets **Claude Desktop** (`%APPDATA%\Claude\claude_de
    EA_PASSWORD=s3cr3t
    ```
 
-3. Add the server to `%USERPROFILE%\.claude\settings.json`:
+3. Add to `%APPDATA%\Claude\claude_desktop_config.json`:
    ```json
    {
      "mcpServers": {
-       "eautomate": {
+       "eautomate-ar": {
          "command": "python",
-         "args": ["C:\\path\\to\\eautomate-mcp\\server.py"],
+         "args": ["C:\\path\\to\\eautomate-ar-mcp\\server.py"],
          "env": {
            "EA_SERVER": "absapp4",
            "EA_DATABASE": "CoAlliedBusiness",
@@ -121,24 +98,18 @@ By default the installer targets **Claude Desktop** (`%APPDATA%\Claude\claude_de
    ```
    See `claude_desktop_config.example.json` for a complete example.
 
-4. Restart Claude.
+4. Restart Claude Desktop.
 
 ---
 
 ## Uninstall
 
+Delete the `eautomate-ar` entry from `%APPDATA%\Claude\claude_desktop_config.json` and restart Claude Desktop.
+
+To also remove the server files:
 ```powershell
-# Claude Desktop (default)
-.\deploy\uninstall.ps1
-
-# Claude Code
-.\deploy\uninstall.ps1 -Target ClaudeCode
-
-# Both
-.\deploy\uninstall.ps1 -Target Both
+Remove-Item "$env:LOCALAPPDATA\Programs\eautomate-ar-mcp" -Recurse -Force
 ```
-
-This removes the registration from the Claude config only. It does not uninstall Python packages or delete any files.
 
 ---
 
