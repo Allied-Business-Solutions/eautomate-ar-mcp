@@ -132,8 +132,8 @@ Write-Host "For SQL login, create a read-only account with db_datareader on the 
 Write-Host "Leave username blank to use Windows Authentication instead."
 Write-Host ""
 
-$eaServer   = Read-WithDefault "SQL Server hostname"   "absapp4"
-$eaDatabase = Read-WithDefault "Database name"         "CoAlliedBusiness"
+$eaServer   = Read-WithDefault "SQL Server hostname"   "your-sql-server"
+$eaDatabase = Read-WithDefault "Database name"         "your-eautomate-db"
 $eaUsername = Read-WithDefault "SQL login username (blank = Windows Auth)" ""
 $eaPassword = ""
 if ($eaUsername) {
