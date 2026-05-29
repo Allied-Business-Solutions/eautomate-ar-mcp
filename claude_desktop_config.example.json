@@ -4,8 +4,8 @@
       "command": "python",
       "args": ["C:\\path\\to\\eautomate-mcp\\server.py"],
       "env": {
-        "EA_SERVER": "absapp4",
-        "EA_DATABASE": "CoAlliedBusiness",
+        "EA_SERVER": "your-sql-server",
+        "EA_DATABASE": "your-eautomate-db",
         "EA_USERNAME": "your_sql_login",
         "EA_PASSWORD": "your_password"
       }

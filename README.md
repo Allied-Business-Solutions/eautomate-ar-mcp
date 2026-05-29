@@ -2,13 +2,11 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server that gives Claude read-only access to your e-automate (ECi) SQL database. Designed to support AR payment processing workflows — matching bank remittance data to customer accounts and invoices without requiring an e-automate API license.
 
-Built for Allied Business Solutions.
-
 ---
 
 ## What It Does
 
-When Tracy receives the bank's remittance export (CSV + check/stub images), she can ask Claude to:
+When your AR team receives the bank's remittance export (CSV + check/stub images), they can ask Claude to:
 
 - **Find a customer** by name or account number — even when the payer name on the check doesn't exactly match the e-automate customer name
 - **Look up an invoice** and see its current balance
@@ -71,8 +69,8 @@ Then **restart Claude Desktop**.
 
 2. Copy `.env.example` to `.env` and fill in your values:
    ```
-   EA_SERVER=absapp4
-   EA_DATABASE=CoAlliedBusiness
+   EA_SERVER=your-sql-server
+   EA_DATABASE=your-eautomate-db
 
    # SQL Server login — leave blank to use Windows Authentication
    EA_USERNAME=earead
@@ -87,8 +85,8 @@ Then **restart Claude Desktop**.
          "command": "python",
          "args": ["C:\\path\\to\\eautomate-ar-mcp\\server.py"],
          "env": {
-           "EA_SERVER": "absapp4",
-           "EA_DATABASE": "CoAlliedBusiness",
+           "EA_SERVER": "your-sql-server",
+           "EA_DATABASE": "your-eautomate-db",
            "EA_USERNAME": "earead",
            "EA_PASSWORD": "s3cr3t"
          }
@@ -117,13 +115,13 @@ Remove-Item "$env:LOCALAPPDATA\Programs\eautomate-ar-mcp" -Recurse -Force
 
 Once installed, ask Claude naturally:
 
-> "Check number 23797 came in for $281.70. It's from American Biotech Labs — look them up and verify the invoice on the stub."
+> "Check number 10482 came in for $314.50. It's from Riverside Medical Group — look them up and verify the invoice on the stub."
 
-> "I have a $779.32 check from Larry H Miller Dealerships covering two invoices: AR601986 and AR601987. Verify both."
+> "I have a $1,204.17 check from Cascade Auto Group covering two invoices: AR204851 and AR204852. Verify both."
 
-> "Has check 693361 already been posted?"
+> "Has check 28831 already been posted?"
 
-> "Show me all open invoices for CustomerID 1744."
+> "Show me all open invoices for CustomerID 4521."
 
 ---
 
@@ -139,9 +137,9 @@ The server supports two authentication modes, selected automatically based on yo
 **Recommended:** Create a dedicated SQL login with `db_datareader` permission only on the e-automate database. This scopes access tightly and works across machines without relying on Windows domain accounts.
 
 ```sql
--- Run on absapp4 as sysadmin
+-- Run on your SQL Server instance as sysadmin
 CREATE LOGIN earead WITH PASSWORD = 'YourStrongPassword';
-USE CoAlliedBusiness;
+USE YourEautomateDatabase;
 CREATE USER earead FOR LOGIN earead;
 ALTER ROLE db_datareader ADD MEMBER earead;
 ```
